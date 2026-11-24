@@ -67,7 +67,7 @@ You need Rust (stable), a Telegram account, and 5 minutes.
 **2. Build and configure**
 
 ```bash
-git clone https://github.com/IzumKonata-Thaoo/tgvault.git && cd tgvault
+git clone https://github.com/IzumKonata-Thaoo/Telegram-Cloud-Rust.git && cd Telegram-Cloud-Rust
 cargo build --release
 
 # Windows: guided setup (finds your channel id, generates keys, writes .env, tests Telegram)
