@@ -63,7 +63,8 @@ expect "upload of another key not visible to writer" "$(code -H "authorization: 
 echo "== presigned URLs & CORS"
 URL=$(curl -s "${A[@]}" "${J[@]}" -d '{"bucket":"media","key":"v/clip one.mp4","expires_in":120}' $B/api/v1/presign | j "['url']")
 expect "presigned GET" "$(curl -s "$URL" | sha256sum | cut -c1-64)" "$SHA"
-expect "tampered signature" "$(code "${URL%?}0")" 403
+LAST="${URL: -1}"; FLIP=$([ "$LAST" = 0 ] && echo 1 || echo 0)   # always change the last hex digit
+expect "tampered signature" "$(code "${URL%?}$FLIP")" 403
 expect "signature reused for other key" "$(code "${URL/clip%20one/other}")" 403
 expect "CORS allowed origin" "$(curl -s -D - -o /dev/null -H 'origin: https://site.example' "$URL" | grep -ic 'access-control-allow-origin: https://site.example')" 1
 expect "CORS foreign origin" "$(curl -s -D - -o /dev/null -H 'origin: https://evil.example' "$URL" | grep -ic access-control-allow-origin)" 0
