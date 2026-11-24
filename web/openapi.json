@@ -1,0 +1,2661 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "tgvault API",
+  "version": "0.1.0",
+  "description": "Encrypted object storage on Telegram. Authenticate with `Authorization: Bearer tgv_<id>_<secret>`. Every request is rate limited per key; public routes are limited per IP. Errors share one shape: `{\"error\": {\"code\", \"message\"}}`."
+ },
+ "servers": [
+  {
+   "url": "http://127.0.0.1:8787"
+  }
+ ],
+ "security": [
+  {
+   "bearer": []
+  }
+ ],
+ "tags": [
+  {
+   "name": "Buckets"
+  },
+  {
+   "name": "Objects"
+  },
+  {
+   "name": "Remote import"
+  },
+  {
+   "name": "Trash"
+  },
+  {
+   "name": "Multipart uploads"
+  },
+  {
+   "name": "Signed URLs"
+  },
+  {
+   "name": "Public buckets"
+  },
+  {
+   "name": "Share links"
+  },
+  {
+   "name": "API keys"
+  },
+  {
+   "name": "Admin"
+  },
+  {
+   "name": "Panel session"
+  }
+ ],
+ "paths": {
+  "/api/v1/auth/login": {
+   "post": {
+    "tags": [
+     "Panel session"
+    ],
+    "summary": "Sign in to the panel",
+    "description": "Exchanges the admin password for an HttpOnly, SameSite=Strict session cookie. Send the returned `csrf` value as `X-CSRF-Token` on every non-GET request made with the cookie. Limited to 10 attempts per minute per IP.",
+    "responses": {
+     "200": {
+      "description": "Signed in",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "csrf": {
+           "type": "string"
+          },
+          "expires_at": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "429": {
+      "$ref": "#/components/responses/RateLimited"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "password"
+        ],
+        "properties": {
+         "password": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "security": []
+   }
+  },
+  "/api/v1/auth/logout": {
+   "post": {
+    "tags": [
+     "Panel session"
+    ],
+    "summary": "Sign out",
+    "description": "Ends the panel session.",
+    "responses": {
+     "204": {
+      "description": "Signed out"
+     }
+    }
+   }
+  },
+  "/api/v1/auth/me": {
+   "get": {
+    "tags": [
+     "Panel session"
+    ],
+    "summary": "Who am I",
+    "description": "Returns the caller's actor id, scopes and bucket restriction. Works with API keys too.",
+    "responses": {
+     "200": {
+      "description": "Caller",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     }
+    },
+    "x-curl": "curl -H \"Authorization: Bearer $TGV_KEY\" $BASE/api/v1/auth/me"
+   }
+  },
+  "/api/v1/buckets": {
+   "get": {
+    "tags": [
+     "Buckets"
+    ],
+    "summary": "List buckets",
+    "description": "Buckets the caller may see, with object counts and bytes (live + trash).\n\n**Scope:** `list`",
+    "responses": {
+     "200": {
+      "description": "Buckets",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "buckets": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Bucket"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    },
+    "x-curl": "curl -H \"Authorization: Bearer $TGV_KEY\" $BASE/api/v1/buckets"
+   },
+   "post": {
+    "tags": [
+     "Buckets"
+    ],
+    "summary": "Create a bucket",
+    "description": "Bucket names are 3-63 characters of `a-z`, `0-9` and `-`.\n\n**Scope:** `admin`",
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Bucket"
+        }
+       }
+      }
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BucketInput"
+       },
+       "example": {
+        "name": "media",
+        "public": false,
+        "cors_origins": [
+         "https://example.com"
+        ],
+        "quota_bytes": 107374182400
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/buckets/{bucket}": {
+   "get": {
+    "tags": [
+     "Buckets"
+    ],
+    "summary": "Get a bucket",
+    "description": "Settings and current usage.\n\n**Scope:** `list`",
+    "responses": {
+     "200": {
+      "description": "Bucket",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Bucket"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "patch": {
+    "tags": [
+     "Buckets"
+    ],
+    "summary": "Update bucket settings",
+    "description": "Send only the fields to change. `quota_bytes: 0` and `default_ttl: 0` remove the limit.\n\n**Scope:** `admin`",
+    "responses": {
+     "200": {
+      "description": "Updated",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Bucket"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "public": {
+          "type": "boolean"
+         },
+         "cors_origins": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         },
+         "quota_bytes": {
+          "type": "integer"
+         },
+         "default_ttl": {
+          "type": "integer"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Buckets"
+    ],
+    "summary": "Delete a bucket",
+    "description": "Refuses while the bucket holds objects unless `force=true`, which deletes every object (including trash) and its chunks.\n\n**Scope:** `admin`",
+    "responses": {
+     "204": {
+      "description": "Deleted"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "force",
+      "in": "query",
+      "required": false,
+      "description": "Delete contents too",
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/buckets/{bucket}/objects": {
+   "get": {
+    "tags": [
+     "Objects"
+    ],
+    "summary": "List objects",
+    "description": "Lists live objects in key order. With `delimiter=/`, keys below the next `/` are folded into `common_prefixes` (folders). Pass `next_cursor` back as `cursor` for the next page.\n\n**Scope:** `list`",
+    "responses": {
+     "200": {
+      "description": "Page",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "objects": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Object"
+           }
+          },
+          "common_prefixes": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "next_cursor": {
+           "type": [
+            "string",
+            "null"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "prefix",
+      "in": "query",
+      "required": false,
+      "description": "Only keys starting with this",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "delimiter",
+      "in": "query",
+      "required": false,
+      "description": "Usually `/`",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "cursor",
+      "in": "query",
+      "required": false,
+      "description": "From `next_cursor`",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "1-1000, default 200",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "x-curl": "curl -H \"Authorization: Bearer $TGV_KEY\" \"$BASE/api/v1/buckets/media/objects?delimiter=/&prefix=videos/\""
+   }
+  },
+  "/api/v1/buckets/{bucket}/objects/{key}": {
+   "put": {
+    "tags": [
+     "Objects"
+    ],
+    "summary": "Upload an object",
+    "description": "Streams the raw request body into encrypted chunks; nothing is buffered beyond one chunk per upload slot. An existing object at the key moves to the trash (previous version). Optional headers: `Content-Type`, `X-TGV-TTL` (seconds until automatic deletion), `X-TGV-Meta-<name>` (user metadata, 2 KB total), `If-None-Match: *` (fail if the key exists). Single uploads are limited by `TGV_MAX_UPLOAD_GIB`; use multipart for very large files or flaky links.\n\n**Scope:** `write`",
+    "responses": {
+     "201": {
+      "description": "Stored",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Object"
+        }
+       }
+      }
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "413": {
+      "description": "Too large or over quota",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "Object key; may contain `/`. Percent-encode each segment.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "X-TGV-TTL",
+      "in": "header",
+      "required": false,
+      "description": "Seconds until the object expires",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "If-None-Match",
+      "in": "header",
+      "required": false,
+      "description": "`*` to refuse overwriting",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/octet-stream": {
+       "schema": {
+        "type": "string",
+        "format": "binary"
+       }
+      }
+     }
+    },
+    "x-curl": "curl -H \"Authorization: Bearer $TGV_KEY\" -H 'Content-Type: video/mp4' -T movie.mp4 $BASE/api/v1/buckets/media/objects/videos/movie.mp4"
+   },
+   "get": {
+    "tags": [
+     "Objects"
+    ],
+    "summary": "Download or stream an object",
+    "description": "Returns the bytes, decrypting only the 64 KiB blocks a request touches. Supports `Range` (206 Partial Content, used by video players to seek), `If-None-Match` (304) and `If-Range`. `?download=1` forces a save dialog. HTML, SVG, XML and script types are always sent as attachments with a sandbox CSP.\n\n**Scope:** `read`",
+    "responses": {
+     "200": {
+      "description": "Whole object",
+      "content": {
+       "*/*": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "206": {
+      "description": "Requested range",
+      "headers": {
+       "Content-Range": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "304": {
+      "description": "Not modified"
+     },
+     "416": {
+      "description": "Range not satisfiable",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "Object key; may contain `/`. Percent-encode each segment.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "Range",
+      "in": "header",
+      "required": false,
+      "description": "e.g. `bytes=0-1048575`",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "download",
+      "in": "query",
+      "required": false,
+      "description": "Force attachment",
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ],
+    "x-curl": "curl -H \"Authorization: Bearer $TGV_KEY\" -H 'Range: bytes=0-1048575' -o part.mp4 $BASE/api/v1/buckets/media/objects/videos/movie.mp4"
+   },
+   "head": {
+    "tags": [
+     "Objects"
+    ],
+    "summary": "Object headers",
+    "description": "Same headers as GET without the body: size, type, ETag.\n\n**Scope:** `read`",
+    "responses": {
+     "200": {
+      "description": "Headers"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "Object key; may contain `/`. Percent-encode each segment.",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "delete": {
+    "tags": [
+     "Objects"
+    ],
+    "summary": "Delete an object",
+    "description": "Moves the object to the trash. `permanent=true` deletes it at once; its chunks are removed from Telegram by the next clean-up when no other object shares them.\n\n**Scope:** `delete`",
+    "responses": {
+     "204": {
+      "description": "Deleted"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "Object key; may contain `/`. Percent-encode each segment.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "permanent",
+      "in": "query",
+      "required": false,
+      "description": "Skip the trash",
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/buckets/{bucket}/copy": {
+   "post": {
+    "tags": [
+     "Objects"
+    ],
+    "summary": "Copy an object",
+    "description": "Server-side copy that shares the encrypted chunks (no re-upload). Needs `read` on the source bucket and `write` on this one.\n\n**Scope:** `read + write`",
+    "responses": {
+     "201": {
+      "description": "Copied",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Object"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "source_key",
+         "dest_key"
+        ],
+        "properties": {
+         "source_key": {
+          "type": "string"
+         },
+         "source_bucket": {
+          "type": "string"
+         },
+         "dest_key": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/buckets/{bucket}/link-by-hash": {
+   "post": {
+    "tags": [
+     "Objects"
+    ],
+    "summary": "Instant upload by SHA-256",
+    "description": "If this bucket already stores bytes with the given SHA-256, creates `key` pointing at them without sending the data. Returns 404 when there is no match, in which case upload normally. Matching is limited to the same bucket so a hash alone cannot unlock someone else's file.\n\n**Scope:** `write`",
+    "responses": {
+     "201": {
+      "description": "Linked",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Object"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "key",
+         "sha256"
+        ],
+        "properties": {
+         "key": {
+          "type": "string"
+         },
+         "sha256": {
+          "type": "string"
+         },
+         "content_type": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/buckets/{bucket}/trash": {
+   "get": {
+    "tags": [
+     "Trash"
+    ],
+    "summary": "List the trash",
+    "description": "Deleted and overwritten objects, newest first. They are purged after `TGV_TRASH_DAYS`.\n\n**Scope:** `list`",
+    "responses": {
+     "200": {
+      "description": "Trash",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "objects": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Object"
+           }
+          },
+          "purge_after_days": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "delete": {
+    "tags": [
+     "Trash"
+    ],
+    "summary": "Empty the trash",
+    "description": "Deletes every trashed object in the bucket for good.\n\n**Scope:** `delete`",
+    "responses": {
+     "200": {
+      "description": "Count",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "deleted": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/objects/{id}": {
+   "get": {
+    "tags": [
+     "Objects"
+    ],
+    "summary": "Object details by id",
+    "description": "Metadata plus the chunk map: each chunk's offset, size and the bot holding it (never Telegram file ids).\n\n**Scope:** `read`",
+    "responses": {
+     "200": {
+      "description": "Object with chunks",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "Object id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/objects/{id}/restore": {
+   "post": {
+    "tags": [
+     "Trash"
+    ],
+    "summary": "Restore from the trash",
+    "description": "Fails with 409 if a live object already uses the key.\n\n**Scope:** `write`",
+    "responses": {
+     "204": {
+      "description": "Restored"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "Object id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/buckets/{bucket}/import": {
+   "post": {
+    "tags": [
+     "Remote import"
+    ],
+    "summary": "Import a file from a URL",
+    "description": "The server downloads `url` itself and streams it, encrypted, straight into the bucket: nothing is written to disk and your client does not relay the bytes. Returns 202 with a job to poll, or with `wait: true` blocks and returns the object (201). Only public http/https addresses are fetched: loopback, private, link-local (cloud metadata), CGNAT and other reserved ranges are refused, including after DNS resolution and on every redirect (max 5). `headers` are sent to the source (for example `Referer` or `Authorization`); `Host` and hop-by-hop headers are not allowed. Size limits and bucket quota apply while streaming.\n\n**Scope:** `write`",
+    "responses": {
+     "202": {
+      "description": "Job started",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ImportJob"
+        }
+       }
+      }
+     },
+     "201": {
+      "description": "Imported (wait=true)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Object"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "X-TGV-TTL",
+      "in": "header",
+      "required": false,
+      "description": "Seconds until the imported object expires",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "url"
+        ],
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "key": {
+          "type": "string",
+          "description": "Defaults to the last URL path segment"
+         },
+         "content_type": {
+          "type": "string"
+         },
+         "headers": {
+          "type": "object",
+          "additionalProperties": {
+           "type": "string"
+          }
+         },
+         "wait": {
+          "type": "boolean"
+         }
+        }
+       },
+       "example": {
+        "url": "https://media.example.com/episodes/ep01.mp4",
+        "key": "series/ep01.mp4",
+        "headers": {
+         "Referer": "https://media.example.com/"
+        }
+       }
+      }
+     }
+    },
+    "x-curl": "curl -H \"Authorization: Bearer $TGV_KEY\" -H 'Content-Type: application/json' -d '{\"url\":\"https://media.example.com/ep01.mp4\",\"key\":\"series/ep01.mp4\",\"wait\":true}' $BASE/api/v1/buckets/media/import"
+   }
+  },
+  "/api/v1/imports/{id}": {
+   "get": {
+    "tags": [
+     "Remote import"
+    ],
+    "summary": "Import progress",
+    "description": "State is `queued`, `downloading`, `storing`, `done` or `failed`. Jobs are kept for 24 hours after they finish.\n\n**Scope:** `write`",
+    "responses": {
+     "200": {
+      "description": "Job",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ImportJob"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "Job id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/imports": {
+   "get": {
+    "tags": [
+     "Remote import"
+    ],
+    "summary": "List recent imports",
+    "description": "Imports started by the caller (admins see all).\n\n**Scope:** `write`",
+    "responses": {
+     "200": {
+      "description": "Jobs",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/api/v1/buckets/{bucket}/uploads": {
+   "post": {
+    "tags": [
+     "Multipart uploads"
+    ],
+    "summary": "Start a multipart upload",
+    "description": "Returns an `upload_id`. Then PUT parts numbered from 1, in any order and in parallel; re-sending a part replaces it. Uploads not completed within 24 hours are aborted.\n\n**Scope:** `write`",
+    "responses": {
+     "201": {
+      "description": "Started",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "upload_id": {
+           "type": "string"
+          },
+          "chunk_size": {
+           "type": "integer"
+          },
+          "max_parts": {
+           "type": "integer"
+          },
+          "expires_at": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "key"
+        ],
+        "properties": {
+         "key": {
+          "type": "string"
+         },
+         "content_type": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "x-curl": "curl -H \"Authorization: Bearer $TGV_KEY\" -H 'Content-Type: application/json' -d '{\"key\":\"big.iso\"}' $BASE/api/v1/buckets/media/uploads"
+   },
+   "get": {
+    "tags": [
+     "Multipart uploads"
+    ],
+    "summary": "List open uploads",
+    "description": "Uploads started by the caller (admins see all).\n\n**Scope:** `write`",
+    "responses": {
+     "200": {
+      "description": "Uploads",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/uploads/{id}": {
+   "get": {
+    "tags": [
+     "Multipart uploads"
+    ],
+    "summary": "Upload progress",
+    "description": "Parts received so far, so an interrupted client knows what to resend.\n\n**Scope:** `write`",
+    "responses": {
+     "200": {
+      "description": "Status",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "Upload id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "delete": {
+    "tags": [
+     "Multipart uploads"
+    ],
+    "summary": "Abort an upload",
+    "description": "Discards received parts.\n\n**Scope:** `write`",
+    "responses": {
+     "204": {
+      "description": "Aborted"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "Upload id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/uploads/{id}/parts/{n}": {
+   "put": {
+    "tags": [
+     "Multipart uploads"
+    ],
+    "summary": "Upload a part",
+    "description": "Raw body. Parts can be any size; each is split into chunks server-side.\n\n**Scope:** `write`",
+    "responses": {
+     "200": {
+      "description": "Part stored",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "part": {
+           "type": "integer"
+          },
+          "size": {
+           "type": "integer"
+          },
+          "sha256": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "Upload id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "n",
+      "in": "path",
+      "required": true,
+      "description": "Part number 1-10000",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/octet-stream": {
+       "schema": {
+        "type": "string",
+        "format": "binary"
+       }
+      }
+     }
+    },
+    "x-curl": "curl -H \"Authorization: Bearer $TGV_KEY\" -T part1.bin $BASE/api/v1/uploads/$UPLOAD_ID/parts/1"
+   }
+  },
+  "/api/v1/uploads/{id}/complete": {
+   "post": {
+    "tags": [
+     "Multipart uploads"
+    ],
+    "summary": "Complete an upload",
+    "description": "Joins parts 1..N in order. Fails if a part number is missing. Accepts the same `X-TGV-TTL` and `X-TGV-Meta-*` headers as a single PUT.\n\n**Scope:** `write`",
+    "responses": {
+     "201": {
+      "description": "Object created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Object"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "Upload id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/presign": {
+   "post": {
+    "tags": [
+     "Signed URLs"
+    ],
+    "summary": "Create a signed URL",
+    "description": "Returns a URL anyone can use until it expires (max 7 days), like an R2 presigned URL. GET links stream with Range support, so they work as `<video src>` on any site listed in the bucket's CORS origins. PUT links let a browser upload directly; set `content_type` to pin the upload's type. Revoking or down-scoping the signing key invalidates its links.\n\n**Scope:** `read (GET) / write (PUT)`",
+    "responses": {
+     "200": {
+      "description": "URL",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "url": {
+           "type": "string"
+          },
+          "method": {
+           "type": "string"
+          },
+          "expires_at": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PresignInput"
+       },
+       "example": {
+        "bucket": "media",
+        "key": "videos/movie.mp4",
+        "method": "GET",
+        "expires_in": 3600
+       }
+      }
+     }
+    },
+    "x-curl": "curl -H \"Authorization: Bearer $TGV_KEY\" -H 'Content-Type: application/json' -d '{\"bucket\":\"media\",\"key\":\"videos/movie.mp4\",\"expires_in\":3600}' $BASE/api/v1/presign"
+   }
+  },
+  "/p/{bucket}/{key}": {
+   "get": {
+    "tags": [
+     "Signed URLs"
+    ],
+    "summary": "Use a signed GET URL",
+    "description": "No credentials: the query string carries `m`, `exp`, `kid`, `sig`. Range requests and CORS are supported.",
+    "responses": {
+     "200": {
+      "description": "Bytes"
+     },
+     "206": {
+      "description": "Range"
+     },
+     "403": {
+      "description": "Invalid or expired link",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "Object key; may contain `/`. Percent-encode each segment.",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "security": []
+   },
+   "put": {
+    "tags": [
+     "Signed URLs"
+    ],
+    "summary": "Use a signed PUT URL",
+    "description": "Upload the raw body. Must send the Content-Type the link was signed for, if any.",
+    "responses": {
+     "201": {
+      "description": "Stored",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Object"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Invalid link or wrong Content-Type",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "Object key; may contain `/`. Percent-encode each segment.",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "security": []
+   }
+  },
+  "/pub/{bucket}/{key}": {
+   "get": {
+    "tags": [
+     "Public buckets"
+    ],
+    "summary": "Read from a public bucket",
+    "description": "Like an r2.dev URL: no credentials, cacheable for 5 minutes, Range supported. Private buckets answer 404.",
+    "responses": {
+     "200": {
+      "description": "Bytes"
+     },
+     "206": {
+      "description": "Range"
+     },
+     "404": {
+      "description": "Missing or private",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    },
+    "parameters": [
+     {
+      "name": "bucket",
+      "in": "path",
+      "required": true,
+      "description": "Bucket name",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "Object key; may contain `/`. Percent-encode each segment.",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "security": [],
+    "x-curl": "<video src=\"$BASE/pub/media/videos/trailer.mp4\" controls></video>"
+   }
+  },
+  "/api/v1/shares": {
+   "post": {
+    "tags": [
+     "Share links"
+    ],
+    "summary": "Create a share link",
+    "description": "A link to one object with an optional password (argon2-hashed), expiry and download cap. The landing page at `url` plays video, audio and images. Each counted download issues a 6-hour cookie so seeking does not use up the cap.\n\n**Scope:** `share + read`",
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "url": {
+           "type": "string"
+          },
+          "raw_url": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShareInput"
+       },
+       "example": {
+        "bucket": "media",
+        "key": "videos/movie.mp4",
+        "password": "for-alex",
+        "expires_in": 604800,
+        "max_downloads": 5
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "Share links"
+    ],
+    "summary": "List share links",
+    "description": "Links the caller created (admins see all).\n\n**Scope:** `share`",
+    "responses": {
+     "200": {
+      "description": "Links",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/api/v1/shares/{id}": {
+   "delete": {
+    "tags": [
+     "Share links"
+    ],
+    "summary": "Turn off a share link",
+    "description": "The link answers 404 from now on.\n\n**Scope:** `share`",
+    "responses": {
+     "204": {
+      "description": "Turned off"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "Share id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/s/{token}": {
+   "get": {
+    "tags": [
+     "Share links"
+    ],
+    "summary": "Share landing page",
+    "description": "HTML page with a player or password form.",
+    "responses": {
+     "200": {
+      "description": "HTML"
+     },
+     "404": {
+      "description": "Unavailable"
+     }
+    },
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "description": "From the share URL",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "security": []
+   }
+  },
+  "/s/{token}/raw": {
+   "get": {
+    "tags": [
+     "Share links"
+    ],
+    "summary": "Share bytes",
+    "description": "Raw bytes with Range support. Password-protected shares need the unlock cookie.",
+    "responses": {
+     "200": {
+      "description": "Bytes"
+     },
+     "206": {
+      "description": "Range"
+     },
+     "403": {
+      "description": "Locked",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Unavailable",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    },
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "description": "From the share URL",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "download",
+      "in": "query",
+      "required": false,
+      "description": "Force attachment",
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ],
+    "security": []
+   }
+  },
+  "/api/v1/keys": {
+   "post": {
+    "tags": [
+     "API keys"
+    ],
+    "summary": "Create an API key",
+    "description": "Returns the key once; only an HMAC of the secret is stored. Restrict it by scope, bucket, IP/CIDR, rate and lifetime, like an R2 API token.\n\n**Scope:** `admin`",
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "key": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/KeyInput"
+       },
+       "example": {
+        "name": "website",
+        "scopes": [
+         "read",
+         "list"
+        ],
+        "buckets": [
+         "media"
+        ],
+        "allowed_ips": [
+         "203.0.113.0/24"
+        ],
+        "rpm": 1200,
+        "expires_in": 7776000
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "API keys"
+    ],
+    "summary": "List API keys",
+    "description": "Never returns secrets.\n\n**Scope:** `admin`",
+    "responses": {
+     "200": {
+      "description": "Keys",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/api/v1/keys/{id}": {
+   "delete": {
+    "tags": [
+     "API keys"
+    ],
+    "summary": "Revoke an API key",
+    "description": "Takes effect immediately, including for signed URLs it issued.\n\n**Scope:** `admin`",
+    "responses": {
+     "204": {
+      "description": "Revoked"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "Key id (the part after tgv_)",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/admin/stats": {
+   "get": {
+    "tags": [
+     "Admin"
+    ],
+    "summary": "Storage and health stats",
+    "description": "Totals, per-bucket usage, cache hit rate, bot health and cool-downs.\n\n**Scope:** `admin`",
+    "responses": {
+     "200": {
+      "description": "Stats",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/api/v1/admin/audit": {
+   "get": {
+    "tags": [
+     "Admin"
+    ],
+    "summary": "Audit log",
+    "description": "Newest first. Page with `before=<id>`.\n\n**Scope:** `admin`",
+    "responses": {
+     "200": {
+      "description": "Events",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    },
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "1-1000",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "before",
+      "in": "query",
+      "required": false,
+      "description": "Event id",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "actor",
+      "in": "query",
+      "required": false,
+      "description": "Filter by actor",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/admin/backups": {
+   "get": {
+    "tags": [
+     "Admin"
+    ],
+    "summary": "List metadata backups",
+    "description": "\n\n**Scope:** `admin`",
+    "responses": {
+     "200": {
+      "description": "Backups",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Admin"
+    ],
+    "summary": "Back up metadata now",
+    "description": "Seals a SQLite snapshot with the active master key, stores it in the backend and pins it in the Telegram channel.\n\n**Scope:** `admin`",
+    "responses": {
+     "200": {
+      "description": "Backup",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/api/v1/admin/gc": {
+   "post": {
+    "tags": [
+     "Admin"
+    ],
+    "summary": "Run clean-up now",
+    "description": "Expires objects past their TTL, purges old trash, aborts stale uploads and deletes unreferenced chunks from Telegram.\n\n**Scope:** `admin`",
+    "responses": {
+     "200": {
+      "description": "Report",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/api/v1/admin/rewrap": {
+   "post": {
+    "tags": [
+     "Admin"
+    ],
+    "summary": "Re-wrap data keys",
+    "description": "After adding a new master key version and making it active, re-encrypts every per-file data key with it. Chunks are not touched.\n\n**Scope:** `admin`",
+    "responses": {
+     "200": {
+      "description": "Report",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/healthz": {
+   "get": {
+    "tags": [
+     "Admin"
+    ],
+    "summary": "Health check",
+    "description": "For load balancers and uptime checks.",
+    "responses": {
+     "200": {
+      "description": "Health",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     }
+    },
+    "security": []
+   }
+  }
+ },
+ "components": {
+  "securitySchemes": {
+   "bearer": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "API key created in the panel or via POST /api/v1/keys"
+   }
+  },
+  "responses": {
+   "BadRequest": {
+    "description": "The request is malformed; the message says which field.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      }
+     }
+    }
+   },
+   "Unauthorized": {
+    "description": "No valid key or session.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      }
+     }
+    }
+   },
+   "Forbidden": {
+    "description": "The key lacks a scope, bucket or IP permission, or the CSRF token is missing.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      }
+     }
+    }
+   },
+   "NotFound": {
+    "description": "Not found, or not visible to this key.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      }
+     }
+    }
+   },
+   "Conflict": {
+    "description": "The resource already exists or is in use.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      }
+     }
+    }
+   },
+   "RateLimited": {
+    "description": "Too many requests; wait `Retry-After` seconds.",
+    "headers": {
+     "Retry-After": {
+      "schema": {
+       "type": "integer"
+      }
+     }
+    },
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      }
+     }
+    }
+   }
+  },
+  "schemas": {
+   "Error": {
+    "type": "object",
+    "properties": {
+     "error": {
+      "type": "object",
+      "properties": {
+       "code": {
+        "type": "string"
+       },
+       "message": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   },
+   "Bucket": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "public": {
+      "type": "boolean"
+     },
+     "cors_origins": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "quota_bytes": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "default_ttl": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "created_at": {
+      "type": "integer"
+     },
+     "objects": {
+      "type": "integer"
+     },
+     "bytes": {
+      "type": "integer"
+     }
+    }
+   },
+   "BucketInput": {
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "public": {
+      "type": "boolean"
+     },
+     "cors_origins": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "`https://site.example` or `*`"
+     },
+     "quota_bytes": {
+      "type": "integer"
+     },
+     "default_ttl": {
+      "type": "integer",
+      "description": "Seconds; new objects expire after this"
+     }
+    }
+   },
+   "Object": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "bucket": {
+      "type": "string"
+     },
+     "key": {
+      "type": "string"
+     },
+     "size": {
+      "type": "integer"
+     },
+     "content_type": {
+      "type": "string"
+     },
+     "etag": {
+      "type": "string"
+     },
+     "meta": {
+      "type": "object"
+     },
+     "created_at": {
+      "type": "integer"
+     },
+     "expires_at": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "deleted_at": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     }
+    }
+   },
+   "ImportJob": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "bucket": {
+      "type": "string"
+     },
+     "key": {
+      "type": "string"
+     },
+     "source": {
+      "type": "string",
+      "description": "URL without query string"
+     },
+     "state": {
+      "type": "string",
+      "enum": [
+       "queued",
+       "downloading",
+       "storing",
+       "done",
+       "failed"
+      ]
+     },
+     "received_bytes": {
+      "type": "integer"
+     },
+     "total_bytes": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "error": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "object": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/Object"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "created_at": {
+      "type": "integer"
+     },
+     "finished_at": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     }
+    }
+   },
+   "PresignInput": {
+    "type": "object",
+    "required": [
+     "bucket",
+     "key"
+    ],
+    "properties": {
+     "bucket": {
+      "type": "string"
+     },
+     "key": {
+      "type": "string"
+     },
+     "method": {
+      "type": "string",
+      "enum": [
+       "GET",
+       "PUT"
+      ]
+     },
+     "expires_in": {
+      "type": "integer",
+      "description": "1-604800 seconds, default 3600"
+     },
+     "content_type": {
+      "type": "string"
+     }
+    }
+   },
+   "ShareInput": {
+    "type": "object",
+    "required": [
+     "bucket",
+     "key"
+    ],
+    "properties": {
+     "bucket": {
+      "type": "string"
+     },
+     "key": {
+      "type": "string"
+     },
+     "password": {
+      "type": "string"
+     },
+     "expires_in": {
+      "type": "integer"
+     },
+     "max_downloads": {
+      "type": "integer"
+     }
+    }
+   },
+   "KeyInput": {
+    "type": "object",
+    "required": [
+     "name",
+     "scopes"
+    ],
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "scopes": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "enum": [
+        "read",
+        "write",
+        "delete",
+        "list",
+        "share",
+        "admin"
+       ]
+      }
+     },
+     "buckets": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "allowed_ips": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "rpm": {
+      "type": "integer"
+     },
+     "expires_in": {
+      "type": "integer"
+     }
+    }
+   }
+  }
+ }
+}
